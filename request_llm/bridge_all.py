@@ -127,7 +127,7 @@ model_info = {
         "tokenizer": tokenizer_gpt35,
         "token_cnt": get_token_num_gpt35,
     },
-
+    
     # api_2d
     "api2d-gpt-3.5-turbo": {
         "fn_with_ui": chatgpt_ui,
@@ -316,6 +316,22 @@ if "internlm" in AVAIL_LLM_MODELS:
                 "fn_without_ui": internlm_noui,
                 "endpoint": None,
                 "max_token": 4096,
+                "tokenizer": tokenizer_gpt35,
+                "token_cnt": get_token_num_gpt35,
+            }
+        })
+    except:
+        print(trimmed_format_exc())
+if "azure-gpt-3.5-16k" in AVAIL_LLM_MODELS:
+    try:
+        AZURE_ENGINE_16K, = get_conf("AZURE_ENGINE_16K")
+        azure_endpoint_16k = AZURE_ENDPOINT + f'openai/deployments/{AZURE_ENGINE_16K}/chat/completions?api-version=2023-05-15'
+        model_info.update({
+            "azure-gpt-3.5-16k": {
+                "fn_with_ui": chatgpt_ui,
+                "fn_without_ui": chatgpt_noui,
+                "endpoint": azure_endpoint_16k,
+                "max_token": 1024 * 16,
                 "tokenizer": tokenizer_gpt35,
                 "token_cnt": get_token_num_gpt35,
             }
