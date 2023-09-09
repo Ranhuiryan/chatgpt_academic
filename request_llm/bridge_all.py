@@ -350,6 +350,38 @@ if "azure-gpt-3.5-16k" in AVAIL_LLM_MODELS:
         })
     except:
         print(trimmed_format_exc())
+if "azure-gpt-4" in AVAIL_LLM_MODELS:
+    try:
+        AZURE_ENGINE_GPT4, = get_conf("AZURE_ENGINE_GPT4")
+        azure_endpoint_gpt4 = AZURE_ENDPOINT + f'openai/deployments/{AZURE_ENGINE_GPT4}/chat/completions?api-version=2023-05-15'
+        model_info.update({
+            "azure-gpt-4": {
+                "fn_with_ui": chatgpt_ui,
+                "fn_without_ui": chatgpt_noui,
+                "endpoint": azure_endpoint_gpt4,
+                "max_token": 1024 * 16,
+                "tokenizer": tokenizer_gpt35,
+                "token_cnt": get_token_num_gpt35,
+            }
+        })
+    except:
+        print(trimmed_format_exc())
+if "azure-gpt-4-32k" in AVAIL_LLM_MODELS:
+    try:
+        AZURE_ENGINE_GPT4_32K, = get_conf("AZURE_ENGINE_GPT4_32K")
+        azure_endpoint_gpt4_32k = AZURE_ENDPOINT + f'openai/deployments/{AZURE_ENGINE_GPT4_32K}/chat/completions?api-version=2023-05-15'
+        model_info.update({
+            "azure-gpt-4-32k": {
+                "fn_with_ui": chatgpt_ui,
+                "fn_without_ui": chatgpt_noui,
+                "endpoint": azure_endpoint_gpt4_32k,
+                "max_token": 1024 * 16,
+                "tokenizer": tokenizer_gpt35,
+                "token_cnt": get_token_num_gpt35,
+            }
+        })
+    except:
+        print(trimmed_format_exc())
 if "chatglm_onnx" in AVAIL_LLM_MODELS:
     try:
         from .bridge_chatglmonnx import predict_no_ui_long_connection as chatglm_onnx_noui
