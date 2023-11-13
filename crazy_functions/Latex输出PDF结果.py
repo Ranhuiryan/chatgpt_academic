@@ -1,5 +1,5 @@
-from toolbox import update_ui, trimmed_format_exc, get_conf, objdump, objload, promote_file_to_downloadzone
-from toolbox import CatchException, report_execption, update_ui_lastest_msg, zip_result, gen_time_str
+from toolbox import update_ui, trimmed_format_exc, get_conf, get_log_folder, promote_file_to_downloadzone
+from toolbox import CatchException, report_exception, update_ui_lastest_msg, zip_result, gen_time_str
 from functools import partial
 import glob, os, requests, time
 pj = os.path.join
@@ -65,7 +65,7 @@ def move_project(project_folder, arxiv_id=None):
     if arxiv_id is not None:
         new_workfolder = pj(ARXIV_CACHE_DIR, arxiv_id, 'workfolder')
     else:
-        new_workfolder = f'gpt_log/{gen_time_str()}'
+        new_workfolder = f'{get_log_folder()}/{gen_time_str()}'
     try:
         shutil.rmtree(new_workfolder)
     except:
@@ -79,7 +79,7 @@ def move_project(project_folder, arxiv_id=None):
     shutil.copytree(src=project_folder, dst=new_workfolder)
     return new_workfolder
 
-def arxiv_download(chatbot, history, txt):
+def arxiv_download(chatbot, history, txt, allow_cache=True):
     def check_cached_translation_pdf(arxiv_id):
         translation_dir = pj(ARXIV_CACHE_DIR, arxiv_id, 'translation')
         if not os.path.exists(translation_dir):
@@ -109,14 +109,14 @@ def arxiv_download(chatbot, history, txt):
 
     url_ = txt   # https://arxiv.org/abs/1707.06690
     if not txt.startswith('https://arxiv.org/abs/'): 
-        msg = f"解析arxiv网址失败, 期望格式例如: https://arxiv.org/abs/1707.06690。实际得到格式: {url_}"
+        msg = f"解析arxiv网址失败, 期望格式例如: https://arxiv.org/abs/1707.06690。实际得到格式: {url_}。"
         yield from update_ui_lastest_msg(msg, chatbot=chatbot, history=history) # 刷新界面
         return msg, None
     # <-------------- set format ------------->
     arxiv_id = url_.split('/abs/')[-1]
     if 'v' in arxiv_id: arxiv_id = arxiv_id[:10]
     cached_translation_pdf = check_cached_translation_pdf(arxiv_id)
-    if cached_translation_pdf: return cached_translation_pdf, arxiv_id
+    if cached_translation_pdf and allow_cache: return cached_translation_pdf, arxiv_id
 
     url_tar = url_.replace('/abs/', '/e-print/')
     translation_dir = pj(ARXIV_CACHE_DIR, arxiv_id, 'e-print')
@@ -129,7 +129,7 @@ def arxiv_download(chatbot, history, txt):
         yield from update_ui_lastest_msg("调用缓存", chatbot=chatbot, history=history)  # 刷新界面
     else:
         yield from update_ui_lastest_msg("开始下载", chatbot=chatbot, history=history)  # 刷新界面
-        proxies, = get_conf('proxies')
+        proxies = get_conf('proxies')
         r = requests.get(url_tar, proxies=proxies)
         with open(dst, 'wb+') as f:
             f.write(r.content)
@@ -171,12 +171,12 @@ def Latex英文纠错加PDF对比(txt, llm_kwargs, plugin_kwargs, chatbot, histo
         project_folder = txt
     else:
         if txt == "": txt = '空空如也的输入栏'
-        report_execption(chatbot, history, a = f"解析项目: {txt}", b = f"找不到本地项目或无权访问: {txt}")
+        report_exception(chatbot, history, a = f"解析项目: {txt}", b = f"找不到本地项目或无权访问: {txt}")
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
         return
     file_manifest = [f for f in glob.glob(f'{project_folder}/**/*.tex', recursive=True)]
     if len(file_manifest) == 0:
-        report_execption(chatbot, history, a = f"解析项目: {txt}", b = f"找不到任何.tex文件: {txt}")
+        report_exception(chatbot, history, a = f"解析项目: {txt}", b = f"找不到任何.tex文件: {txt}")
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
         return
     
@@ -228,6 +228,9 @@ def Latex翻译中文并重新编译PDF(txt, llm_kwargs, plugin_kwargs, chatbot,
     # <-------------- more requirements ------------->
     if ("advanced_arg" in plugin_kwargs) and (plugin_kwargs["advanced_arg"] == ""): plugin_kwargs.pop("advanced_arg")
     more_req = plugin_kwargs.get("advanced_arg", "")
+    no_cache = more_req.startswith("--no-cache")
+    if no_cache: more_req.lstrip("--no-cache")
+    allow_cache = not no_cache
     _switch_prompt_ = partial(switch_prompt, more_requirement=more_req)
 
     # <-------------- check deps ------------->
@@ -244,9 +247,9 @@ def Latex翻译中文并重新编译PDF(txt, llm_kwargs, plugin_kwargs, chatbot,
 
     # <-------------- clear history and read input ------------->
     history = []
-    txt, arxiv_id = yield from arxiv_download(chatbot, history, txt)
+    txt, arxiv_id = yield from arxiv_download(chatbot, history, txt, allow_cache)
     if txt.endswith('.pdf'):
-        report_execption(chatbot, history, a = f"解析项目: {txt}", b = f"发现已经存在翻译好的PDF文档")
+        report_exception(chatbot, history, a = f"解析项目: {txt}", b = f"发现已经存在翻译好的PDF文档")
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
         return
     
@@ -255,13 +258,13 @@ def Latex翻译中文并重新编译PDF(txt, llm_kwargs, plugin_kwargs, chatbot,
         project_folder = txt
     else:
         if txt == "": txt = '空空如也的输入栏'
-        report_execption(chatbot, history, a = f"解析项目: {txt}", b = f"找不到本地项目或无权访问: {txt}")
+        report_exception(chatbot, history, a = f"解析项目: {txt}", b = f"找不到本地项目或无法处理: {txt}")
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
         return
     
     file_manifest = [f for f in glob.glob(f'{project_folder}/**/*.tex', recursive=True)]
     if len(file_manifest) == 0:
-        report_execption(chatbot, history, a = f"解析项目: {txt}", b = f"找不到任何.tex文件: {txt}")
+        report_exception(chatbot, history, a = f"解析项目: {txt}", b = f"找不到任何.tex文件: {txt}")
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
         return
     

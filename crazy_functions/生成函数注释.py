@@ -1,5 +1,6 @@
 from toolbox import update_ui
-from toolbox import CatchException, report_execption, write_results_to_file
+from toolbox import CatchException, report_exception
+from toolbox import write_history_to_file, promote_file_to_downloadzone
 from .crazy_utils import request_gpt_model_in_new_thread_with_ui_alive
 fast_debug = False
 
@@ -27,7 +28,8 @@ def 生成函数注释(file_manifest, project_folder, llm_kwargs, plugin_kwargs,
             if not fast_debug: time.sleep(2)
 
     if not fast_debug: 
-        res = write_results_to_file(history)
+        res = write_history_to_file(history)
+        promote_file_to_downloadzone(res, chatbot=chatbot)
         chatbot.append(("完成了吗？", res))
         yield from update_ui(chatbot=chatbot, history=history, msg=msg) # 刷新界面
 
@@ -41,14 +43,14 @@ def 批量生成函数注释(txt, llm_kwargs, plugin_kwargs, chatbot, history, s
         project_folder = txt
     else:
         if txt == "": txt = '空空如也的输入栏'
-        report_execption(chatbot, history, a = f"解析项目: {txt}", b = f"找不到本地项目或无权访问: {txt}")
+        report_exception(chatbot, history, a = f"解析项目: {txt}", b = f"找不到本地项目或无权访问: {txt}")
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
         return
     file_manifest = [f for f in glob.glob(f'{project_folder}/**/*.py', recursive=True)] + \
                     [f for f in glob.glob(f'{project_folder}/**/*.cpp', recursive=True)]
 
     if len(file_manifest) == 0:
-        report_execption(chatbot, history, a = f"解析项目: {txt}", b = f"找不到任何.tex文件: {txt}")
+        report_exception(chatbot, history, a = f"解析项目: {txt}", b = f"找不到任何.tex文件: {txt}")
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
         return
     yield from 生成函数注释(file_manifest, project_folder, llm_kwargs, plugin_kwargs, chatbot, history, system_prompt)

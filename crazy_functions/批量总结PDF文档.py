@@ -1,5 +1,6 @@
 from toolbox import update_ui, promote_file_to_downloadzone, gen_time_str
-from toolbox import CatchException, report_execption, write_results_to_file
+from toolbox import CatchException, report_exception
+from toolbox import write_history_to_file, promote_file_to_downloadzone
 from .crazy_utils import request_gpt_model_in_new_thread_with_ui_alive
 from .crazy_utils import read_and_clean_pdf_text
 from .crazy_utils import input_clipping
@@ -20,7 +21,7 @@ def 解析PDF(file_manifest, project_folder, llm_kwargs, plugin_kwargs, chatbot,
         TOKEN_LIMIT_PER_FRAGMENT = 2500
 
         from .crazy_utils import breakdown_txt_to_satisfy_token_limit_for_pdf
-        from request_llm.bridge_all import model_info
+        from request_llms.bridge_all import model_info
         enc = model_info["gpt-3.5-turbo"]['tokenizer']
         def get_token_num(txt): return len(enc.encode(txt, disallowed_special=()))
         paper_fragments = breakdown_txt_to_satisfy_token_limit_for_pdf(
@@ -99,8 +100,8 @@ do not have too much repetitive information, numerical values using the original
         _, final_results = input_clipping("", final_results, max_token_limit=3200)
         yield from update_ui(chatbot=chatbot, history=final_results) # 注意这里的历史记录被替代了
 
-    res = write_results_to_file(file_write_buffer, file_name=gen_time_str())
-    promote_file_to_downloadzone(res.split('\t')[-1], chatbot=chatbot)
+    res = write_history_to_file(file_write_buffer)
+    promote_file_to_downloadzone(res, chatbot=chatbot)
     yield from update_ui(chatbot=chatbot, history=final_results) # 刷新界面
 
 
@@ -118,7 +119,7 @@ def 批量总结PDF文档(txt, llm_kwargs, plugin_kwargs, chatbot, history, syst
     try:
         import fitz
     except:
-        report_execption(chatbot, history, 
+        report_exception(chatbot, history, 
             a = f"解析项目: {txt}", 
             b = f"导入软件依赖失败。使用该模块需要额外依赖，安装方法```pip install --upgrade pymupdf```。")
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
@@ -132,7 +133,7 @@ def 批量总结PDF文档(txt, llm_kwargs, plugin_kwargs, chatbot, history, syst
         project_folder = txt
     else:
         if txt == "": txt = '空空如也的输入栏'
-        report_execption(chatbot, history, a = f"解析项目: {txt}", b = f"找不到本地项目或无权访问: {txt}")
+        report_exception(chatbot, history, a = f"解析项目: {txt}", b = f"找不到本地项目或无权访问: {txt}")
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
         return
 
@@ -141,7 +142,7 @@ def 批量总结PDF文档(txt, llm_kwargs, plugin_kwargs, chatbot, history, syst
     
     # 如果没找到任何文件
     if len(file_manifest) == 0:
-        report_execption(chatbot, history, a = f"解析项目: {txt}", b = f"找不到任何.tex或.pdf文件: {txt}")
+        report_exception(chatbot, history, a = f"解析项目: {txt}", b = f"找不到任何.tex或.pdf文件: {txt}")
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
         return
 

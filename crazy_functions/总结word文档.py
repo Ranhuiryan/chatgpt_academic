@@ -1,5 +1,6 @@
 from toolbox import update_ui
-from toolbox import CatchException, report_execption, write_results_to_file
+from toolbox import CatchException, report_exception
+from toolbox import write_history_to_file, promote_file_to_downloadzone
 from .crazy_utils import request_gpt_model_in_new_thread_with_ui_alive
 fast_debug = False
 
@@ -31,7 +32,7 @@ def 解析docx(file_manifest, project_folder, llm_kwargs, plugin_kwargs, chatbot
         print(file_content)
         # private_upload里面的文件名在解压zip后容易出现乱码（rar和7z格式正常），故可以只分析文章内容，不输入文件名
         from .crazy_utils import breakdown_txt_to_satisfy_token_limit_for_pdf
-        from request_llm.bridge_all import model_info
+        from request_llms.bridge_all import model_info
         max_token = model_info[llm_kwargs['llm_model']]['max_token']
         TOKEN_LIMIT_PER_FRAGMENT = max_token * 3 // 4
         paper_fragments = breakdown_txt_to_satisfy_token_limit_for_pdf(
@@ -71,11 +72,13 @@ def 解析docx(file_manifest, project_folder, llm_kwargs, plugin_kwargs, chatbot
             history.extend([i_say,gpt_say])
             this_paper_history.extend([i_say,gpt_say])
 
-        res = write_results_to_file(history)
+        res = write_history_to_file(history)
+        promote_file_to_downloadzone(res, chatbot=chatbot)
         chatbot.append(("完成了吗？", res))
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
 
-    res = write_results_to_file(history)
+    res = write_history_to_file(history)
+    promote_file_to_downloadzone(res, chatbot=chatbot)
     chatbot.append(("所有文件都总结完成了吗？", res))
     yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
 
@@ -94,7 +97,7 @@ def 总结word文档(txt, llm_kwargs, plugin_kwargs, chatbot, history, system_pr
     try:
         from docx import Document
     except:
-        report_execption(chatbot, history,
+        report_exception(chatbot, history,
                          a=f"解析项目: {txt}",
                          b=f"导入软件依赖失败。使用该模块需要额外依赖，安装方法```pip install --upgrade python-docx pywin32```。")
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
@@ -108,7 +111,7 @@ def 总结word文档(txt, llm_kwargs, plugin_kwargs, chatbot, history, system_pr
         project_folder = txt
     else:
         if txt == "": txt = '空空如也的输入栏'
-        report_execption(chatbot, history, a=f"解析项目: {txt}", b=f"找不到本地项目或无权访问: {txt}")
+        report_exception(chatbot, history, a=f"解析项目: {txt}", b=f"找不到本地项目或无权访问: {txt}")
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
         return
 
@@ -121,7 +124,7 @@ def 总结word文档(txt, llm_kwargs, plugin_kwargs, chatbot, history, system_pr
 
     # 如果没找到任何文件
     if len(file_manifest) == 0:
-        report_execption(chatbot, history, a=f"解析项目: {txt}", b=f"找不到任何.docx或doc文件: {txt}")
+        report_exception(chatbot, history, a=f"解析项目: {txt}", b=f"找不到任何.docx或doc文件: {txt}")
         yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
         return
 

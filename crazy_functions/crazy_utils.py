@@ -1,9 +1,11 @@
-from toolbox import update_ui, get_conf, trimmed_format_exc
+from toolbox import update_ui, get_conf, trimmed_format_exc, get_log_folder
 import threading
+import os
+import logging
 
 def input_clipping(inputs, history, max_token_limit):
     import numpy as np
-    from request_llm.bridge_all import model_info
+    from request_llms.bridge_all import model_info
     enc = model_info["gpt-3.5-turbo"]['tokenizer']
     def get_token_num(txt): return len(enc.encode(txt, disallowed_special=()))
 
@@ -61,18 +63,21 @@ def request_gpt_model_in_new_thread_with_ui_alive(
     """
     import time
     from concurrent.futures import ThreadPoolExecutor
-    from request_llm.bridge_all import predict_no_ui_long_connection
+    from request_llms.bridge_all import predict_no_ui_long_connection
     # 用户反馈
     chatbot.append([inputs_show_user, ""])
     yield from update_ui(chatbot=chatbot, history=[]) # 刷新界面
     executor = ThreadPoolExecutor(max_workers=16)
     mutable = ["", time.time(), ""]
+    # 看门狗耐心
+    watch_dog_patience = 5
+    # 请求任务
     def _req_gpt(inputs, history, sys_prompt):
         retry_op = retry_times_at_unknown_error
         exceeded_cnt = 0
         while True:
             # watchdog error
-            if len(mutable) >= 2 and (time.time()-mutable[1]) > 5: 
+            if len(mutable) >= 2 and (time.time()-mutable[1]) > watch_dog_patience: 
                 raise RuntimeError("检测到程序终止。")
             try:
                 # 【第一种情况】：顺利完成
@@ -172,11 +177,11 @@ def request_gpt_model_multi_threads_with_very_awesome_ui_and_high_efficiency(
     """
     import time, random
     from concurrent.futures import ThreadPoolExecutor
-    from request_llm.bridge_all import predict_no_ui_long_connection
+    from request_llms.bridge_all import predict_no_ui_long_connection
     assert len(inputs_array) == len(history_array)
     assert len(inputs_array) == len(sys_prompt_array)
     if max_workers == -1: # 读取配置文件
-        try: max_workers, = get_conf('DEFAULT_WORKER_NUM')
+        try: max_workers = get_conf('DEFAULT_WORKER_NUM')
         except: max_workers = 8
         if max_workers <= 0: max_workers = 3
     # 屏蔽掉 chatglm的多线程，可能会导致严重卡顿
@@ -191,6 +196,9 @@ def request_gpt_model_multi_threads_with_very_awesome_ui_and_high_efficiency(
     # 跨线程传递
     mutable = [["", time.time(), "等待中"] for _ in range(n_frag)]
 
+    # 看门狗耐心
+    watch_dog_patience = 5
+
     # 子线程任务
     def _req_gpt(index, inputs, history, sys_prompt):
         gpt_say = ""
@@ -199,7 +207,7 @@ def request_gpt_model_multi_threads_with_very_awesome_ui_and_high_efficiency(
         mutable[index][2] = "执行中"
         while True:
             # watchdog error
-            if len(mutable[index]) >= 2 and (time.time()-mutable[index][1]) > 5: 
+            if len(mutable[index]) >= 2 and (time.time()-mutable[index][1]) > watch_dog_patience: 
                 raise RuntimeError("检测到程序终止。")
             try:
                 # 【第一种情况】：顺利完成
@@ -273,7 +281,7 @@ def request_gpt_model_multi_threads_with_very_awesome_ui_and_high_efficiency(
         # 在前端打印些好玩的东西
         for thread_index, _ in enumerate(worker_done):
             print_something_really_funny = "[ ...`"+mutable[thread_index][0][-scroller_max_len:].\
-                replace('\n', '').replace('```', '...').replace(
+                replace('\n', '').replace('`', '.').replace(
                     ' ', '.').replace('<br/>', '.....').replace('$', '.')+"`... ]"
             observe_win.append(print_something_really_funny)
         # 在前端打印些好玩的东西
@@ -299,7 +307,7 @@ def request_gpt_model_multi_threads_with_very_awesome_ui_and_high_efficiency(
             gpt_res = f.result()
             chatbot.append([inputs_show_user, gpt_res])
             yield from update_ui(chatbot=chatbot, history=[]) # 刷新界面
-            time.sleep(0.3)
+            time.sleep(0.5)
     return gpt_response_collection
 
 
@@ -469,14 +477,16 @@ def read_and_clean_pdf_text(fp):
                     '- ', '') for t in text_areas['blocks'] if 'lines' in t]
                 
         ############################## <第 2 步，获取正文主字体> ##################################
-        fsize_statiscs = {}
-        for span in meta_span:
-            if span[1] not in fsize_statiscs: fsize_statiscs[span[1]] = 0
-            fsize_statiscs[span[1]] += span[2]
-        main_fsize = max(fsize_statiscs, key=fsize_statiscs.get)
-        if REMOVE_FOOT_NOTE:
-            give_up_fize_threshold = main_fsize * REMOVE_FOOT_FFSIZE_PERCENT
-
+        try:
+            fsize_statiscs = {}
+            for span in meta_span:
+                if span[1] not in fsize_statiscs: fsize_statiscs[span[1]] = 0
+                fsize_statiscs[span[1]] += span[2]
+            main_fsize = max(fsize_statiscs, key=fsize_statiscs.get)
+            if REMOVE_FOOT_NOTE:
+                give_up_fize_threshold = main_fsize * REMOVE_FOOT_FFSIZE_PERCENT
+        except:
+            raise RuntimeError(f'抱歉, 我们暂时无法解析此PDF文档: {fp}。')
         ############################## <第 3 步，切分和重新整合> ##################################
         mega_sec = []
         sec = []
@@ -591,11 +601,16 @@ def get_files_from_everything(txt, type): # type='.md'
         # 网络的远程文件
         import requests
         from toolbox import get_conf
-        proxies, = get_conf('proxies')
-        r = requests.get(txt, proxies=proxies)
-        with open('./gpt_log/temp'+type, 'wb+') as f: f.write(r.content)
-        project_folder = './gpt_log/'
-        file_manifest = ['./gpt_log/temp'+type]
+        from toolbox import get_log_folder, gen_time_str
+        proxies = get_conf('proxies')
+        try:
+            r = requests.get(txt, proxies=proxies)
+        except:
+            raise ConnectionRefusedError(f"无法下载资源{txt}，请检查。")
+        path = os.path.join(get_log_folder(plugin_name='web_download'), gen_time_str()+type)
+        with open(path, 'wb+') as f: f.write(r.content)
+        project_folder = get_log_folder(plugin_name='web_download')
+        file_manifest = [path]
     elif txt.endswith(type):
         # 直接给定文件
         file_manifest = [txt]
@@ -642,7 +657,7 @@ class knowledge_archive_interface():
             from toolbox import ProxyNetworkActivate
             print('Checking Text2vec ...')
             from langchain.embeddings.huggingface import HuggingFaceEmbeddings
-            with ProxyNetworkActivate():    # 临时地激活代理网络
+            with ProxyNetworkActivate('Download_LLM'):    # 临时地激活代理网络
                 self.text2vec_large_chinese = HuggingFaceEmbeddings(model_name="GanymedeNil/text2vec-large-chinese")
 
         return self.text2vec_large_chinese
@@ -698,56 +713,64 @@ class knowledge_archive_interface():
         )
         self.threadLock.release()
         return resp, prompt
+    
+@Singleton
+class nougat_interface():
+    def __init__(self):
+        self.threadLock = threading.Lock()
 
-def try_install_deps(deps):
+    def nougat_with_timeout(self, command, cwd, timeout=3600):
+        import subprocess
+        from toolbox import ProxyNetworkActivate
+        logging.info(f'正在执行命令 {command}')
+        with ProxyNetworkActivate("Nougat_Download"):
+            process = subprocess.Popen(command, shell=True, cwd=cwd, env=os.environ)
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout, stderr = process.communicate()
+            print("Process timed out!")
+            return False
+        return True
+
+
+    def NOUGAT_parse_pdf(self, fp, chatbot, history):
+        from toolbox import update_ui_lastest_msg
+
+        yield from update_ui_lastest_msg("正在解析论文, 请稍候。进度：正在排队, 等待线程锁...", 
+                                         chatbot=chatbot, history=history, delay=0)
+        self.threadLock.acquire()
+        import glob, threading, os
+        from toolbox import get_log_folder, gen_time_str
+        dst = os.path.join(get_log_folder(plugin_name='nougat'), gen_time_str())
+        os.makedirs(dst)
+
+        yield from update_ui_lastest_msg("正在解析论文, 请稍候。进度：正在加载NOUGAT... （提示：首次运行需要花费较长时间下载NOUGAT参数）", 
+                                         chatbot=chatbot, history=history, delay=0)
+        self.nougat_with_timeout(f'nougat --out "{os.path.abspath(dst)}" "{os.path.abspath(fp)}"', os.getcwd(), timeout=3600)
+        res = glob.glob(os.path.join(dst,'*.mmd'))
+        if len(res) == 0:
+            self.threadLock.release()
+            raise RuntimeError("Nougat解析论文失败。")
+        self.threadLock.release()
+        return res[0]
+
+
+
+
+def try_install_deps(deps, reload_m=[]):
+    import subprocess, sys, importlib
     for dep in deps:
-        import subprocess, sys
         subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--user', dep])
+    import site
+    importlib.reload(site)
+    for m in reload_m:
+        importlib.reload(__import__(m))
 
 
-class construct_html():
-    def __init__(self) -> None:
-        self.css = """
-.row {
-  display: flex;
-  flex-wrap: wrap;
-}
-
-.column {
-  flex: 1;
-  padding: 10px;
-}
-
-.table-header {
-  font-weight: bold;
-  border-bottom: 1px solid black;
-}
-
-.table-row {
-  border-bottom: 1px solid lightgray;
-}
-
-.table-cell {
-  padding: 5px;
-}
-        """
-        self.html_string = f'<!DOCTYPE html><head><meta charset="utf-8"><title>翻译结果</title><style>{self.css}</style></head>'
-
-
-    def add_row(self, a, b):
-        tmp = """
-<div class="row table-row">
-    <div class="column table-cell">REPLACE_A</div>
-    <div class="column table-cell">REPLACE_B</div>
-</div>
-        """
-        from toolbox import markdown_convertion
-        tmp = tmp.replace('REPLACE_A', markdown_convertion(a))
-        tmp = tmp.replace('REPLACE_B', markdown_convertion(b))
-        self.html_string += tmp
-
-
-    def save_file(self, file_name):
-        with open(f'./gpt_log/{file_name}', 'w', encoding='utf8') as f:
-            f.write(self.html_string.encode('utf-8', 'ignore').decode())
-
+def get_plugin_arg(plugin_kwargs, key, default):
+    # 如果参数是空的
+    if (key in plugin_kwargs) and (plugin_kwargs[key] == ""): plugin_kwargs.pop(key)
+    # 正常情况
+    return plugin_kwargs.get(key, default)

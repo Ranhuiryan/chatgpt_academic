@@ -256,6 +256,7 @@ def find_main_tex_file(file_manifest, mode):
             canidates_score.append(0)
             with open(texf, 'r', encoding='utf8', errors='ignore') as f:
                 file_content = f.read()
+                file_content = rm_comments(file_content)
             for uw in unexpected_words:
                 if uw in file_content:
                     canidates_score[-1] -= 1
@@ -290,7 +291,11 @@ def find_tex_file_ignore_case(fp):
     import glob
     for f in glob.glob(dir_name+'/*.tex'):
         base_name_s = os.path.basename(fp)
-        if base_name_s.lower() == base_name.lower(): return f
+        base_name_f = os.path.basename(f)
+        if base_name_s.lower() == base_name_f.lower(): return f
+        # 试着加上.tex后缀试试
+        if not base_name_s.endswith('.tex'): base_name_s+='.tex'
+        if base_name_s.lower() == base_name_f.lower(): return f
     return None
 
 def merge_tex_files_(project_foler, main_file, mode):
@@ -301,9 +306,12 @@ def merge_tex_files_(project_foler, main_file, mode):
     for s in reversed([q for q in re.finditer(r"\\input\{(.*?)\}", main_file, re.M)]):
         f = s.group(1)
         fp = os.path.join(project_foler, f)
-        fp = find_tex_file_ignore_case(fp)
-        if fp:
-            with open(fp, 'r', encoding='utf-8', errors='replace') as fx: c = fx.read()
+        fp_ = find_tex_file_ignore_case(fp)
+        if fp_:
+            try:
+                with open(fp_, 'r', encoding='utf-8', errors='replace') as fx: c = fx.read()
+            except:
+                c = f"\n\nWarning from GPT-Academic: LaTex source file is missing!\n\n"
         else:
             raise RuntimeError(f'找不到{fp}，Tex源文件缺失！')
         c = merge_tex_files_(project_foler, c, mode)
@@ -337,9 +345,40 @@ def merge_tex_files(project_foler, main_file, mode):
         pattern_opt2 = re.compile(r"\\abstract\{(.*?)\}", flags=re.DOTALL)
         match_opt1 = pattern_opt1.search(main_file)
         match_opt2 = pattern_opt2.search(main_file)
+        if (match_opt1 is None) and (match_opt2 is None):
+            # "Cannot find paper abstract section!"
+            main_file = insert_abstract(main_file)
+        match_opt1 = pattern_opt1.search(main_file)
+        match_opt2 = pattern_opt2.search(main_file)
         assert (match_opt1 is not None) or (match_opt2 is not None), "Cannot find paper abstract section!"
     return main_file
 
+
+insert_missing_abs_str = r"""
+\begin{abstract}
+The GPT-Academic program cannot find abstract section in this paper.
+\end{abstract}
+"""
+
+def insert_abstract(tex_content):
+    if "\\maketitle" in tex_content:
+        # find the position of "\maketitle"
+        find_index = tex_content.index("\\maketitle")
+        # find the nearest ending line
+        end_line_index = tex_content.find("\n", find_index)
+        # insert "abs_str" on the next line
+        modified_tex = tex_content[:end_line_index+1] + '\n\n' + insert_missing_abs_str + '\n\n' + tex_content[end_line_index+1:]
+        return modified_tex
+    elif r"\begin{document}" in tex_content:
+        # find the position of "\maketitle"
+        find_index = tex_content.index(r"\begin{document}")
+        # find the nearest ending line
+        end_line_index = tex_content.find("\n", find_index)
+        # insert "abs_str" on the next line
+        modified_tex = tex_content[:end_line_index+1] + '\n\n' + insert_missing_abs_str + '\n\n' + tex_content[end_line_index+1:]
+        return modified_tex
+    else:
+        return tex_content
 
 """
 =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -423,7 +462,7 @@ def compile_latex_with_timeout(command, cwd, timeout=60):
 
 def merge_pdfs(pdf1_path, pdf2_path, output_path):
     import PyPDF2
-    Percent = 0.8
+    Percent = 0.95
     # Open the first PDF file
     with open(pdf1_path, 'rb') as pdf1_file:
         pdf1_reader = PyPDF2.PdfFileReader(pdf1_file)
