@@ -28,6 +28,9 @@ from .bridge_chatglm3 import predict as chatglm3_ui
 from .bridge_qianfan import predict_no_ui_long_connection as qianfan_noui
 from .bridge_qianfan import predict as qianfan_ui
 
+from .bridge_google_gemini import predict as genai_ui
+from .bridge_google_gemini import predict_no_ui_long_connection  as genai_noui
+
 colors = ['#FF00FF', '#00FFFF', '#FF0000', '#990099', '#009999', '#990044']
 
 class LazyloadTiktoken(object):
@@ -246,6 +249,22 @@ model_info = {
         "tokenizer": tokenizer_gpt35,
         "token_cnt": get_token_num_gpt35,
     },
+    "gemini-pro": {
+        "fn_with_ui": genai_ui,
+        "fn_without_ui": genai_noui,
+        "endpoint": None,
+        "max_token": 1024 * 32,
+        "tokenizer": tokenizer_gpt35,
+        "token_cnt": get_token_num_gpt35,
+    },
+    "gemini-pro-vision": {
+        "fn_with_ui": genai_ui,
+        "fn_without_ui": genai_noui,
+        "endpoint": None,
+        "max_token": 1024 * 32,
+        "tokenizer": tokenizer_gpt35,
+        "token_cnt": get_token_num_gpt35,
+    },
 }
 
 # -=-=-=-=-=-=- api2d 对齐支持 -=-=-=-=-=-=-
@@ -431,16 +450,48 @@ if "chatglm_onnx" in AVAIL_LLM_MODELS:
         })
     except:
         print(trimmed_format_exc())
-if "qwen" in AVAIL_LLM_MODELS:
+if "qwen-local" in AVAIL_LLM_MODELS:
+    try:
+        from .bridge_qwen_local import predict_no_ui_long_connection as qwen_local_noui
+        from .bridge_qwen_local import predict as qwen_local_ui
+        model_info.update({
+            "qwen-local": {
+                "fn_with_ui": qwen_local_ui,
+                "fn_without_ui": qwen_local_noui,
+                "endpoint": None,
+                "max_token": 4096,
+                "tokenizer": tokenizer_gpt35,
+                "token_cnt": get_token_num_gpt35,
+            }
+        })
+    except:
+        print(trimmed_format_exc())
+if "qwen-turbo" in AVAIL_LLM_MODELS or "qwen-plus" in AVAIL_LLM_MODELS or "qwen-max" in AVAIL_LLM_MODELS:   # zhipuai
     try:
         from .bridge_qwen import predict_no_ui_long_connection as qwen_noui
         from .bridge_qwen import predict as qwen_ui
         model_info.update({
-            "qwen": {
+            "qwen-turbo": {
                 "fn_with_ui": qwen_ui,
                 "fn_without_ui": qwen_noui,
                 "endpoint": None,
-                "max_token": 4096,
+                "max_token": 6144,
+                "tokenizer": tokenizer_gpt35,
+                "token_cnt": get_token_num_gpt35,
+            },
+            "qwen-plus": {
+                "fn_with_ui": qwen_ui,
+                "fn_without_ui": qwen_noui,
+                "endpoint": None,
+                "max_token": 30720,
+                "tokenizer": tokenizer_gpt35,
+                "token_cnt": get_token_num_gpt35,
+            },
+            "qwen-max": {
+                "fn_with_ui": qwen_ui,
+                "fn_without_ui": qwen_noui,
+                "endpoint": None,
+                "max_token": 28672,
                 "tokenizer": tokenizer_gpt35,
                 "token_cnt": get_token_num_gpt35,
             }
